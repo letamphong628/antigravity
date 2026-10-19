@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Antigravity Web Hub</title>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-main: #131314;
@@ -216,7 +216,6 @@
             min-width: 0;
         }
 
-        /* THANH ĐIỀU HƯỚNG TRÊN CÙNG ĐƯỢC TỐI ƯU CHỐNG TRÀN CHỮ */
         .top-navbar {
             display: flex;
             align-items: center;
@@ -255,7 +254,7 @@
             font-size: 0.88rem;
             cursor: pointer;
             outline: none;
-            max-width: 220px;
+            max-width: 240px;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
@@ -292,10 +291,10 @@
             -webkit-text-fill-color: transparent;
         }
 
-        .message-row { display: flex; gap: 14px; }
+        .message-row { display: flex; gap: 14px; width: 100%; }
         .message-row.user { justify-content: flex-end; }
         .message-content {
-            max-width: 82%;
+            max-width: 85%;
             line-height: 1.6;
             font-size: 0.95rem;
         }
@@ -305,19 +304,69 @@
             border-radius: 18px 18px 4px 18px;
         }
 
+        /* REALTIME REASONING BOX (CHUẨN ANTIGRAVITY ENGINE) */
         .reasoning-box {
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-left: 3px solid var(--accent-blue);
-            padding: 10px 14px;
-            margin-bottom: 8px;
-            border-radius: 0 8px 8px 0;
-            font-size: 0.88rem;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            border-radius: 6px 12px 12px 6px;
+            font-size: 0.86rem;
             color: var(--text-secondary);
-            white-space: pre-wrap;
+            transition: all 0.2s ease;
         }
-        .reasoning-toggle { font-weight: 500; color: var(--accent-blue); margin-bottom: 4px; }
 
-        /* KHUNG NHẬP DỮ LIỆU ĐÁY MÀN HÌNH */
+        .reasoning-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .reasoning-title {
+            font-weight: 500;
+            color: var(--accent-blue);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .thinking-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(168, 199, 250, 0.2);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .reasoning-content {
+            margin-top: 10px;
+            font-family: 'JetBrains Mono', monospace, monospace;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            color: #b0b4b8;
+            white-space: pre-wrap;
+            border-top: 1px dashed rgba(255, 255, 255, 0.06);
+            padding-top: 8px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .response-text {
+            color: var(--text-primary);
+            line-height: 1.65;
+            word-break: break-word;
+        }
+
+        /* KHUNG NHẬP */
         .input-wrapper {
             padding: 10px 18% 24px;
             flex-shrink: 0;
@@ -356,7 +405,7 @@
         }
         .btn-send:hover { color: var(--accent-blue); }
 
-        /* MODAL BẢNG THÔNG TIN */
+        /* MODAL */
         #aboutModal {
             display: none;
             position: fixed;
@@ -405,7 +454,6 @@
         }
         .modal-text-version { font-size: 0.85rem; color: var(--text-secondary); }
 
-        /* TỐI ƯU CHO GIAO DIỆN DI ĐỘNG */
         @media (max-width: 768px) {
             #sidebar {
                 position: fixed;
@@ -447,6 +495,7 @@
         let activeSessionId = null;
         let unsubscribeSessions = null;
         let unsubscribeMessages = null;
+        let isGenerating = false;
 
         window.loginGoogle = async () => {
             try {
@@ -544,6 +593,9 @@
 
             const q = query(collection(db, "users", currentUser.uid, "workspaces", sessionId, "messages"), orderBy("timestamp", "asc"));
             unsubscribeMessages = onSnapshot(q, (snapshot) => {
+                // Nếu bot đang stream trực tiếp thì không render đè lên
+                if (isGenerating) return;
+
                 chatContainer.innerHTML = '';
                 if (snapshot.empty) {
                     chatContainer.innerHTML = `
@@ -555,13 +607,13 @@
                 }
                 snapshot.forEach(docSnap => {
                     const msg = docSnap.data();
-                    renderMessage(msg.role, msg.content, msg.reasoning, msg.model);
+                    renderStaticMessage(msg.role, msg.content, msg.reasoning, msg.model);
                 });
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             });
         };
 
-        function renderMessage(role, content, reasoning, model) {
+        function renderStaticMessage(role, content, reasoning, model) {
             const chatContainer = document.getElementById('chatContainer');
             const row = document.createElement('div');
             row.className = `message-row ${role}`;
@@ -570,19 +622,25 @@
             if (role === 'bot' && reasoning) {
                 body += `
                     <div class="reasoning-box">
-                        <div class="reasoning-toggle">⚙️ Suy luận Antigravity (${model || 'Core'})</div>
-                        <div>${escapeHtml(reasoning)}</div>
+                        <div class="reasoning-header" onclick="this.nextElementSibling.style.display = (this.nextElementSibling.style.display === 'none' ? 'block' : 'none')">
+                            <span class="reasoning-title">⚙️ Quá trình suy luận (${model || 'Antigravity'})</span>
+                            <span style="font-size: 0.75rem; color: var(--text-secondary);">▼</span>
+                        </div>
+                        <div class="reasoning-content" style="display:none;">${escapeHtml(reasoning)}</div>
                     </div>`;
             }
-            body += `<div>${escapeHtml(content)}</div></div>`;
+            body += `<div class="response-text">${escapeHtml(content)}</div></div>`;
             row.innerHTML = body;
             chatContainer.appendChild(row);
         }
 
+        // ==========================================
+        // ANTIGRAVITY REALTIME STREAMING & THINKING ENGINE
+        // ==========================================
         window.sendMessage = async () => {
             const input = document.getElementById('promptInput');
             const text = input.value.trim();
-            if (!text) return;
+            if (!text || isGenerating) return;
             if (!currentUser || !activeSessionId) {
                 alert("Vui lòng đăng nhập Google và chọn một phiên làm việc!");
                 return;
@@ -590,154 +648,13 @@
 
             const model = document.getElementById('modelSelector').value;
             input.value = '';
+            isGenerating = true;
 
-            await addDoc(collection(db, "users", currentUser.uid, "workspaces", activeSessionId, "messages"), {
-                role: "user",
-                content: text,
-                timestamp: serverTimestamp()
-            });
+            const welcome = document.querySelector('.welcome-screen');
+            if (welcome) welcome.remove();
 
-            let simulatedReasoning = `• [Antigravity Engine] Phân tích cấu trúc prompt: "${text}"\n` +
-                                     `• [Xác thực mô hình] Định tuyến đến hạt nhân suy luận ${model}.\n` +
-                                     `• [Kiểm thử logic] Trạng thái phản hồi hoàn tất.`;
-            let simulatedReply = `Hệ thống Antigravity Web Core đã nhận lệnh và xử lý thành công yêu cầu của bạn theo mô hình ${model}.`;
+            const chatContainer = document.getElementById('chatContainer');
 
-            await addDoc(collection(db, "users", currentUser.uid, "workspaces", activeSessionId, "messages"), {
-                role: "bot",
-                content: simulatedReply,
-                reasoning: simulatedReasoning,
-                model: model,
-                timestamp: serverTimestamp()
-            });
-        };
-
-        function escapeHtml(str) {
-            return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        }
-
-        window.toggleSidebar = () => {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            if (sidebar.classList.contains('open')) {
-                sidebar.classList.remove('open');
-                overlay.style.display = 'none';
-            } else {
-                sidebar.classList.add('open');
-                overlay.style.display = 'block';
-            }
-        };
-
-        window.closeSidebar = () => {
-            document.getElementById('sidebar').classList.remove('open');
-            document.getElementById('sidebarOverlay').style.display = 'none';
-        };
-
-        window.openAboutModal = () => {
-            document.getElementById('aboutModal').style.display = 'flex';
-        };
-
-        window.closeAboutModal = () => {
-            document.getElementById('aboutModal').style.display = 'none';
-        };
-    </script>
-</head>
-<body>
-
-    <!-- LỚP PHỦ MỜ (OVERLAY) -->
-    <div id="sidebarOverlay" onclick="closeSidebar()"></div>
-
-    <!-- SIDEBAR -->
-    <div id="sidebar">
-        <div>
-            <div class="sidebar-header">
-                <div class="brand-title">
-                    <span style="color: #4285f4;">✦</span> Antigravity
-                </div>
-                <button class="btn-close-sidebar" onclick="closeSidebar()" title="Đóng tab">✕</button>
-            </div>
-
-            <button class="btn-new-chat" onclick="createNewSession()">
-                <span>＋</span> Cuộc trò chuyện mới
-            </button>
-
-            <ul class="nav-items">
-                <li class="nav-item">🗂 Thư viện</li>
-                <li class="nav-item">🕒 Đã lên lịch</li>
-                <li class="nav-item">🎓 Sinh viên</li>
-            </ul>
-
-            <div class="workspace-header">
-                <span>Thư Mục Làm Việc</span>
-                <button class="btn-add-session" title="Tạo cuộc trò chuyện mới" onclick="createNewSession()">+</button>
-            </div>
-            
-            <ul class="session-list" id="sessionList"></ul>
-        </div>
-
-        <div class="sidebar-footer">
-            <div class="help-row">
-                <button class="btn-help" onclick="openAboutModal()" title="Thông tin ứng dụng">?</button>
-            </div>
-
-            <div class="user-profile" id="userProfile">
-                <div class="user-info-group">
-                    <div class="user-avatar"></div>
-                    <div style="font-size:0.85rem; color:var(--text-secondary);">Đang tải...</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- MAIN CHAT VIEWPORT -->
-    <div id="main-content">
-        <div class="top-navbar">
-            <div class="navbar-left">
-                <button class="menu-btn" onclick="toggleSidebar()" title="Mở menu">☰</button>
-                <div class="model-picker">
-                    <select id="modelSelector">
-                        <option value="antigravity-deep-reasoning">Antigravity Thinking (Suy luận máy chủ)</option>
-                        <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-                        <option value="gemini-1-5-pro">Gemini 1.5 Pro</option>
-                        <option value="gemini-1-5-flash">Gemini 1.5 Flash</option>
-                    </select>
-                </div>
-            </div>
-            <div class="navbar-status">Web: Online</div>
-        </div>
-
-        <div class="chat-container" id="chatContainer">
-            <div class="welcome-screen" id="welcomeScreen">
-                <div style="font-size: 3rem;">✦</div>
-                <h1>Chúng ta nên bắt đầu từ đâu?</h1>
-            </div>
-        </div>
-
-        <div class="input-wrapper">
-            <div class="input-box">
-                <button style="background:none; border:none; color:var(--text-secondary); font-size:1.2rem; cursor:pointer;">＋</button>
-                <textarea id="promptInput" placeholder="Nhập câu hỏi hoặc yêu cầu Antigravity..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
-                <button class="btn-send" onclick="sendMessage()">➤</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ABOUT POPUP MODAL -->
-    <div id="aboutModal" onclick="if(event.target===this)closeAboutModal()">
-        <div class="modal-content">
-            <button class="close-modal-x" onclick="closeAboutModal()">✕</button>
-            
-            <svg class="antigravity-icon" viewBox="0 0 100 100" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M50 8 C50 35 25 50 8 50 C25 50 50 65 50 92 C50 65 75 50 92 50 C75 50 50 35 50 8 Z" />
-            </svg>
-
-            <div class="modal-text-title">
-                Antigravity Website (Build And Create By Letamphong628)
-            </div>
-            <div class="modal-text-version">
-                Version: 1.0.0 (Beta)
-            </div>
-        </div>
-    </div>
-
-</body>
-</html>
+            // 1. Render tin nhắn User
+            const userRow = document.createElement('div');
+            userRow.className = 'message-
